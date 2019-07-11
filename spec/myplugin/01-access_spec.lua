@@ -13,56 +13,80 @@ for _, strategy in helpers.each_strategy() do
     lazy_setup(function()
       local bp, route1
 
-      if KONG_VERSION >= version("0.15.0") then
-        --
-        -- Kong version 0.15.0/1.0.0, new test helpers
-        --
-        local bp = helpers.get_db_utils(strategy, nil, { PLUGIN_NAME })
+      local bp = helpers.get_db_utils(strategy, nil, { PLUGIN_NAME })
 
-        local route1 = bp.routes:insert({
-          hosts = { "test1.com", "test2.com" },
-        })
-        bp.plugins:insert {
-          name = PLUGIN_NAME,
-          route = { id = route1.id },
-          config = {
-            blacklist = {
-              {
-                method = "POST",
-                path = "api/v1",
-                host = "test2.com",
-                version_range = {
-                  "1.0.0"
-                }
+      local route1 = bp.routes:insert({
+        hosts = { "test1.com" },
+      })
+
+      local route2 = bp.routes:insert({
+        hosts = { "test2.com" },
+      })
+
+      local route3 = bp.routes:insert({
+        hosts = { "test3.com" },
+      })
+
+      local route4 = bp.routes:insert({
+        hosts = { "test4.com" },
+      })
+
+      bp.plugins:insert {
+        name = PLUGIN_NAME,
+        route = { id = route1.id },
+        config = {},
+      }
+
+      bp.plugins:insert {
+        name = PLUGIN_NAME,
+        route = { id = route2.id },
+        config = {
+          blacklist = {
+            {
+              method = "GET",
+              path = "status/200",
+              host = "test2.com",
+              version_range = {
+                "1.0.0",
+                "2.0.0"
               }
             }
-          },
-        }
-      else
-        --
-        -- Pre Kong version 0.15.0/1.0.0, older test helpers
-        --
-        local bp = helpers.get_db_utils(strategy)
+          }
+        },
+      }
 
-        local route1 = bp.routes:insert({
-          hosts = { "test1.com" },
-        })
-        bp.plugins:insert {
-          name = PLUGIN_NAME,
-          route_id = route1.id,
-          config = {},
-        }
-      end
+      bp.plugins:insert {
+        name = PLUGIN_NAME,
+        route = { id = route3.id },
+        config = {
+          blacklist = {
+            {
+              version_range = {
+                "1.0.0",
+                "2.0.0"
+              }
+            }
+          }
+        },
+      }
 
-      -- start kong
+      bp.plugins:insert {
+        name = PLUGIN_NAME,
+        route = { id = route4.id },
+        config = {
+          blacklist = {
+            {
+              path = "status/200",
+              host = "test4.com",
+            }
+          }
+        },
+      }
+
       assert(helpers.start_kong({
-        -- set the strategy
         database   = strategy,
-        -- use the custom test template to create a local mock server
         nginx_conf = "spec/fixtures/custom_nginx.template",
-        -- set the config item to make sure our plugin gets loaded
-        plugins = "bundled," .. PLUGIN_NAME,  -- since Kong CE 0.14
-        custom_plugins = PLUGIN_NAME,         -- pre Kong CE 0.14
+        plugins = "bundled," .. PLUGIN_NAME
       }))
     end)
 
@@ -79,29 +103,101 @@ for _, strategy in helpers.each_strategy() do
     end)
 
 
-    describe("request", function()
-      it("gets block if match blacklist", function()
-        local r1 = assert(client:send {
+    describe("no blacklist set", function()
+      it("passes the request", function()
+        local r = assert(client:send {
           method = "GET",
-          path = "/request",
+          path = "/status/200",
           headers = {
             host = "test1.com",
             ["mobile-version"] = "1.2.0"
           }
         })
 
-        assert.response(r1).has.status(200)
+        assert.response(r).has.status(200)
+      end)
+    end)
 
-        local r2 = assert(client:send {
-          method = "POST",
-          path = "/api/v1",
+
+    describe("blacklist set", function()
+      it("passes the request if it has no mobile-version header", function()
+        local r = assert(client:send {
+          method = "GET",
+          path = "/status/200",
           headers = {
-            host = "test2.com",
+            host = "test2.com"
+          }
+        })
+
+        assert.response(r).has.status(200)
+      end)
+    end)
+
+
+    describe("only version_range is set", function()
+      it("blocks the request if it matches in blacklist", function()
+        local r = assert(client:send {
+          method = "GET",
+          path = "/status/200",
+          headers = {
+            host = "test3.com",
             ["mobile-version"] = "1.2.0"
           }
         })
 
-        assert.response(r2).has.status(299)
+        assert.response(r).has.status(299)
+      end)
+      
+      it("passes the request if it doesn't match in blacklist", function()
+        local r = assert(client:send {
+          method = "GET",
+          path = "/status/200",
+          headers = {
+            host = "test3.com",
+            ["mobile-version"] = "2.3.0"
+          }
+        })
+
+        assert.response(r).has.status(200)
+      end)
+    end)
+
+
+    describe("only host and path are set", function()
+      it("blocks the request if it matches in blacklist", function()
+        local r1 = assert(client:send {
+          method = "GET",
+          path = "/status/200",
+          headers = {
+            host = "test4.com",
+            ["mobile-version"] = "1.2.0"
+          }
+        })
+
+        assert.response(r1).has.status(299)
+
+        local r2 = assert(client:send {
+          method = "GET",
+          path = "/status/200",
+          headers = {
+            host = "test4.com"
+          }
+        })
+
+        assert.response(r2).has.status(200)
+      end)
+      
+      it("passes the request if it doesn't match in blacklist", function()
+        local r = assert(client:send {
+          method = "GET",
+          path = "/status/500",
+          headers = {
+            host = "test4.com",
+            ["mobile-version"] = "2.3.0"
+          }
+        })
+
+        assert.response(r).has.status(500)
       end)
     end)
   end)
