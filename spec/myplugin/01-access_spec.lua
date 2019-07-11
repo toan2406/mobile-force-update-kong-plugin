@@ -20,12 +20,23 @@ for _, strategy in helpers.each_strategy() do
         local bp = helpers.get_db_utils(strategy, nil, { PLUGIN_NAME })
 
         local route1 = bp.routes:insert({
-          hosts = { "test1.com" },
+          hosts = { "test1.com", "test2.com" },
         })
         bp.plugins:insert {
           name = PLUGIN_NAME,
           route = { id = route1.id },
-          config = {},
+          config = {
+            blacklist = {
+              {
+                method = "POST",
+                path = "api/v1",
+                host = "test2.com",
+                version_range = {
+                  "1.0.0"
+                }
+              }
+            }
+          },
         }
       else
         --
@@ -68,44 +79,30 @@ for _, strategy in helpers.each_strategy() do
     end)
 
 
-
     describe("request", function()
-      it("gets a 'hello-world' header", function()
-        local r = assert(client:send {
+      it("gets block if match blacklist", function()
+        local r1 = assert(client:send {
           method = "GET",
-          path = "/request",  -- makes mockbin return the entire request
+          path = "/request",
           headers = {
-            host = "test1.com"
+            host = "test1.com",
+            ["mobile-version"] = "1.2.0"
           }
         })
-        -- validate that the request succeeded, response status 200
-        assert.response(r).has.status(200)
-        -- now check the request (as echoed by mockbin) to have the header
-        local header_value = assert.request(r).has.header("hello-world")
-        -- validate the value of that header
-        assert.equal("this is on a request", header_value)
-      end)
-    end)
 
+        assert.response(r1).has.status(200)
 
-
-    describe("response", function()
-      it("gets a 'bye-world' header", function()
-        local r = assert(client:send {
-          method = "GET",
-          path = "/request",  -- makes mockbin return the entire request
+        local r2 = assert(client:send {
+          method = "POST",
+          path = "/api/v1",
           headers = {
-            host = "test1.com"
+            host = "test2.com",
+            ["mobile-version"] = "1.2.0"
           }
         })
-        -- validate that the request succeeded, response status 200
-        assert.response(r).has.status(200)
-        -- now check the response to have the header
-        local header_value = assert.response(r).has.header("bye-world")
-        -- validate the value of that header
-        assert.equal("this is on the response", header_value)
+
+        assert.response(r2).has.status(299)
       end)
     end)
-
   end)
 end
