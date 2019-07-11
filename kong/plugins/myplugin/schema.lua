@@ -1,11 +1,54 @@
+local typedefs = require "kong.db.schema.typedefs"
+
+
 return {
-  no_consumer = false, -- this plugin is available on APIs as well as on Consumers,
+  name = "myplugin",
   fields = {
-    -- Describe your plugin's configuration's schema here.
-    
-  },
-  self_check = function(schema, plugin_t, dao, is_updating)
-    -- perform any custom verification
-    return true
-  end
+    {
+      consumer = typedefs.no_consumer
+    },
+    {
+      config = {
+        type = "record",
+        fields = {
+          {
+            blacklist = {
+              type = "array",
+              elements = {
+                type = "record",
+                fields = {
+                  {
+                    method = {
+                      type = "string",
+                      default = "GET"
+                    }
+                  },
+                  {
+                    host = {
+                      type = "string"
+                    }
+                  },
+                  {
+                    path = {
+                      type = "string"
+                    }
+                  },
+                  {
+                    version_range = {
+                      type = "array",
+                      elements = {
+                        type = "string"
+                      },
+                      default = {}
+                    }
+                  }
+                }
+              },
+              default = {}
+            }
+          }
+        }
+      }
+    }
+  }
 }
